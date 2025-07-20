@@ -42,9 +42,9 @@ class StockService:
     
     def get_stock_by_product_and_store(self, product_id, store_id):
         # Validate product exists in products service
-        if not self._validate_product_exists(product_id):
-            logging.error(f"Product {product_id} does not exist")
-            return None
+        # if not self._validate_product_exists(product_id):
+        #     logging.error(f"Product {product_id} does not exist")
+        #     return None
         
         stock = self.stock_repository.get_by_product_and_store(product_id, store_id)
         return stock

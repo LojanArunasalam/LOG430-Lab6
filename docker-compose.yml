@@ -33,10 +33,10 @@ services:
       - "8001:8001"
     volumes:
       - ./microservices/products:/app
-    depends_on:
-      - db_products
     environment:
       - DATABASE_URL_PRODUCTS=postgresql://admin:admin@db_products:5433/postgres
+    depends_on:
+      - db_products
     expose:
       - "8001"
     networks:
@@ -145,7 +145,7 @@ services:
     volumes:
       - ./microservices/ecommerce:/app
     environment:
-      - DATABASE_URL_ECOMMERCE=postgresql://admin:admin@db_ecommerce:5436/postgres
+      - DATABASE_URL_ECOMMERCE=postgresql://admin:admin@db_ecommerce:5432/postgres
     depends_on:
       - db_ecommerce
     expose:
@@ -166,6 +166,37 @@ services:
       - "5432"
     volumes: 
       - ./microservices/ecommerce/init_ecommerce.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - api_network
+
+  saga_orchestrator:
+    build: ./microservices/saga-orchestrator
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./microservices/saga-orchestrator:/app
+    environment:
+      - DATABASE_URL_SAGA=postgresql://admin:admin@db_saga:5437/postgres
+    depends_on:
+      - db_saga
+    expose:
+      - "8005"
+    networks:
+      - api_network
+
+  db_saga:
+    image: postgres:16
+    container_name: db_saga
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres
+    ports:
+      - "5437:5432"
+    expose: 
+      - "5432"
+    volumes: 
+      - ./microservices/saga-orchestrator/init_saga.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - api_network
 

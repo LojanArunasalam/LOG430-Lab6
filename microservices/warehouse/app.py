@@ -8,6 +8,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from typing import List, Optional
 
+import requests 
+import logging
+
 app = FastAPI(title="Warehouse Management Service")
 engine = create_engine("postgresql+psycopg2://admin:admin@10.194.32.165:5434/postgres")
 Session = sessionmaker(bind=engine)
@@ -198,11 +201,20 @@ def update_stock_quantity(product: int, store: int, stock_data: StockUpdateSeria
         session.close()
 
 @app.post("/api/v1/stocks/reduce")
-def reduce_stock(product: int, store: int, quantity: int):
+def reduce_stock(product: int, store: int, quantity: int, saga_id: Optional[int] = None):
     session = Session()
     try:
         stock_service = StockService(session)
         reduced_stock = stock_service.reduce_stock(product, store, quantity)
+
+        if saga_id and reduced_stock:
+            publish_event(event_type="stock_reserved", saga_id=saga_id, data={
+                "product_id": product,
+                "store_id": store,
+                "quantity": quantity,
+                "new_quantity": reduced_stock.quantite
+            }, success=True)
+        
         return {
             "message": "Stock reduced successfully",
             "new_quantity": reduced_stock.quantite
@@ -303,6 +315,27 @@ def transfer_from_depot_to_store(transfer_data: TransferRequestSerializer):
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         session.close()
+
+def publish_event(event_type: str, saga_id: int, data: dict, success: bool = True):
+    """Publish event to saga orchestrator"""
+    try:
+        event_payload = {
+            "saga_id": saga_id,
+            "event_type": event_type,
+            "success": success,
+            "data": data,
+            "service": "warehouse"
+        }
+        
+        response = requests.post(
+            "http://saga_orchestrator:8005/api/v1/saga/events",
+            json=event_payload
+        )
+        
+        if response.status_code != 200:
+            logging.error(f"Failed to publish event: {response.text}")
+    except Exception as e:
+        logging.error(f"Error publishing event: {e}")
 
 # # Warehouse Complex Operations
 # @app.get("/api/v1/inventory/product/{product}")

@@ -18,7 +18,7 @@ CREATE TABLE item_carts (
 CREATE TABLE checkout  (
     id SERIAL PRIMARY KEY,
     cart_id INTEGER REFERENCES carts(id),
-    current_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    current_status VARCHAR(50) NOT NULL DEFAULT 'pending'
 );
 
 

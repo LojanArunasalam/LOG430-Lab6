@@ -142,7 +142,7 @@ class CartService:
     def _get_product_info(self, product_id):
         """Obtenir les informations du produit depuis le microservice produits"""
         try:
-            response = requests.get(f"http://localhost:8000/products/api/v1/products/{product_id}")
+            response = requests.get(f"http://kong-api_gateway:8000/products/api/v1/products/{product_id}")
             if response.status_code == 200:
                 return response.json()
             return None
@@ -153,7 +153,7 @@ class CartService:
     def _check_stock_availability(self, product_id, store_id, quantity):
         """Vérifier la disponibilité du stock depuis le microservice warehouse"""
         try:
-            response = requests.get(f"http://localhost:8000/warehouse/api/v1/stocks/product/{product_id}/store/{store_id}")
+            response = requests.get(f"http://kong-api_gateway:8000/warehouse/api/v1/stocks/product/{product_id}/store/{store_id}")
             if response.status_code == 200:
                 stock_data = response.json()
                 return stock_data['quantite'] >= quantity
@@ -257,7 +257,7 @@ class CheckoutService:
     def _check_stock_availability(self, product_id, store_id, quantity):
         """Vérifier la disponibilité du stock depuis le microservice warehouse"""
         try:
-            response = requests.get(f"http://localhost:8000/warehouse/api/v1/stocks/product/{product_id}/store/{store_id}")
+            response = requests.get(f"http://kong-api_gateway:8000/warehouse/api/v1/stocks/product/{product_id}/store/{store_id}")
             if response.status_code == 200:
                 stock_data = response.json()
                 return stock_data['quantite'] >= quantity
@@ -270,7 +270,7 @@ class CheckoutService:
         """Réduire le stock dans le microservice warehouse"""
         try:
             response = requests.post(
-                f"http://localhost:8000/warehouse/api/v1/stocks/reduce",
+                f"http://kong-api_gateway:8000/warehouse/api/v1/stocks/reduce",
                 params={
                     "product": product_id,
                     "store": store_id,
@@ -288,7 +288,7 @@ class CheckoutService:
     def _get_user_info(self, user_id):
         """Obtenir les informations de l'utilisateur depuis le microservice users"""
         try:
-            response = requests.get(f"http://localhost:8000/users/api/v1/customers/{user_id}")
+            response = requests.get(f"http://kong-api_gateway:8000/users/api/v1/customers/{user_id}")
             if response.status_code == 200:
                 return response.json()
             return None

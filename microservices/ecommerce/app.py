@@ -29,7 +29,6 @@ class CartSerializer(BaseModel):
 class ItemCartSerializer(BaseModel):
     id: int
     quantite: int
-    prix: float
     cart: int 
     product: int
     
@@ -40,9 +39,9 @@ class CartCreateSerializer(BaseModel):
 
 class AddItemToCartSerializer(BaseModel):
     quantite: int
-    prix: float
-    cart: int 
-    product: int
+    cart: int  
+    product: int 
+    store_id: int
     
 
 class UpdateItemSerializer(BaseModel):
@@ -72,8 +71,8 @@ def add_item_to_cart(item_data: AddItemToCartSerializer):
     item = cart_service.add_item_to_cart(
         item_data.cart, 
         item_data.product, 
-        item_data.quantite, 
-        item_data.prix
+        item_data.quantite,
+        item_data.store_id
     )
     return item
 

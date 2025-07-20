@@ -25,7 +25,7 @@ class UserCreateSerializer(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
 
-class UserUpdateSerializer(BaseModel):
+class UserUpdateSerializer(BaseModel): 
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
