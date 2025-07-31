@@ -17,12 +17,26 @@ VALID_TRANSITIONS = {
     OrderState.CANCELLED: []  # Final state
 }
 
+saga_state_counter = None
+saga_current_states = None
+
+
+def initialize_metrics():
+    """Initialize metrics - call this from saga_service.py"""
+    global saga_state_counter, saga_current_states
+    from saga_service import saga_state_counter as state_counter
+    from saga_service import saga_current_states as current_states
+    saga_state_counter = state_counter
+    saga_current_states = current_states
+
 class OrderStateMachine:
     """Manages state transitions for order sagas"""
     
     def __init__(self, db: Session):
         self.db = db
         self.VALID_TRANSITIONS = VALID_TRANSITIONS
+        if saga_state_counter is None:
+            initialize_metrics()
     
     def create_saga(self, order_id: int, customer_id: int, product_id: int, 
                    store_id: int, cart_id: int, quantity: int, amount: float = None) -> SagaInstance:
@@ -87,9 +101,44 @@ class OrderStateMachine:
             saga.saga_status = SagaStatus.IN_PROGRESS.value
         
         self.db.commit()
+
+        # UPDATE METRICS HERE
+        if saga_state_counter:
+            saga_state_counter.labels(state=new_state.value).inc()
+        
+        if saga_current_states:
+            self._update_current_state_metrics()
         
         logger.info(f"Saga {saga_id} transitioned from {old_state} to {new_state.value}")
         return True
+
+    def _update_current_state_metrics(self):
+        """Update the current state gauge metrics"""
+        try:
+            # Query current state counts for active sagas
+            state_counts = self.db.query(
+                SagaInstance.current_state,
+                count(SagaInstance.id).label('count')
+            ).filter(
+                SagaInstance.saga_status.in_([
+                    SagaStatus.STARTED.value,
+                    SagaStatus.IN_PROGRESS.value,
+                    SagaStatus.COMPENSATING.value
+                ])
+            ).group_by(SagaInstance.current_state).all()
+            
+            # Reset all gauges to 0
+            for state in OrderState:
+                if saga_current_states:
+                    saga_current_states.labels(state=state.value).set(0)
+            
+            # Set current counts
+            for state, count in state_counts:
+                if saga_current_states:
+                    saga_current_states.labels(state=state).set(count)
+                    
+        except Exception as e:
+            logger.error(f"Error updating state metrics: {e}")
     
     def log_step_started(self, saga_id: int, step_name: str, request_data: Dict[str, Any]):
         """Log that a saga step has started"""

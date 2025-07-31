@@ -1,6 +1,7 @@
 import requests
 import logging
 import time
+import datetime
 import json
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -11,12 +12,14 @@ from py_api_saga.py_api_saga import SagaAssembler
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
 # Prometheus metrics
 saga_counter = Counter('saga_total', 'Total number of sagas', ['status'])
 saga_duration = Histogram('saga_duration_seconds', 'Saga execution duration')
 saga_step_duration = Histogram('saga_step_duration_seconds', 'Individual step duration', ['step'])
 active_sagas = Gauge('active_sagas_total', 'Number of currently active sagas')
+
+saga_state_counter = Counter('saga_states_total', 'Total number of state transitions', ['state'])
+saga_current_states = Gauge('saga_current_states', 'Current number of sagas in each state', ['state'])
 
 class SagaService:
     
@@ -25,11 +28,42 @@ class SagaService:
         self.state_machine = OrderStateMachine(db)
         self.timeout = 30  # seconds
         
-        # Service endpoints - these should match your docker-compose services
         self.services = {
             'warehouse': 'http://microservices_warehouse-1:8002',
             'ecommerce': 'http://microservices_ecommerce:8004'
         }
+
+        self._initialize_state_metrics()
+
+    def _initialize_state_metrics(self):
+        """Initialize current state metrics on startup"""
+        try:
+            # Import here to avoid circular imports
+            from sqlalchemy import func
+            
+            # Get current state counts
+            state_counts = self.db.query(
+                SagaInstance.current_state,
+                func.count(SagaInstance.id).label('count')
+            ).filter(
+                SagaInstance.saga_status.in_([
+                    SagaStatus.STARTED.value,
+                    SagaStatus.IN_PROGRESS.value,
+                    SagaStatus.COMPENSATING.value
+                ])
+            ).group_by(SagaInstance.current_state).all()
+            
+            # Initialize all state gauges
+            for state in OrderState:
+                saga_current_states.labels(state=state.value).set(0)
+            
+            # Set current counts
+            for state, count in state_counts:
+                saga_current_states.labels(state=state).set(count)
+                
+            logger.info("State metrics initialized")
+        except Exception as e:
+            logger.error(f"Error initializing state metrics: {e}")
     
     def start_order_saga(self, customer_id: int, product_id: int, store_id: int, 
                         cart_id: int, quantity: int) -> Dict[str, Any]:
@@ -78,7 +112,8 @@ class SagaService:
                     'order_id': order_id,
                     'status': 'completed',
                     'current_state': OrderState.ORDER_CONFIRMED.value,
-                    'message': 'Order processed successfully'
+                    'message': 'Order processed successfully',
+                    'created_at': datetime.datetime.now().isoformat()
                 }
             else:
                 saga_counter.labels(status='failed').inc()
@@ -89,7 +124,9 @@ class SagaService:
                     'order_id': order_id,
                     'status': 'failed',
                     'current_state': saga.current_state,
-                    'message': saga.error_message or 'Order processing failed'
+                    'message': saga.error_message or 'Order processing failed',
+                    'created_at': datetime.datetime.now().isoformat()
+
                 }
                 
         except Exception as e:
@@ -101,7 +138,8 @@ class SagaService:
                 'order_id': None,
                 'status': 'error',
                 'current_state': 'error',
-                'message': f'Failed to start saga: {str(e)}'
+                'message': f'Failed to start saga: {str(e)}',
+                'created_at': datetime.datetime.now().isoformat()
             }
     
     def _execute_saga_steps(self, saga_id: int, order_data: Dict[str, Any]) -> bool:
@@ -339,16 +377,16 @@ class SagaService:
                 if len(parts) == 3:
                     cart_id, product_id = parts[1], parts[2]
                     
-                    # Call ecommerce service to remove item from cart
+                    # Call ecommerce service to clear items from cart
                     response = requests.delete(
-                        f"{self.services['ecommerce']}/api/v1/cart/{cart_id}/items/{product_id}",
+                        f"{self.services['ecommerce']}/api/v1/cart/{cart_id}/clear",
                         timeout=self.timeout
                     )
                     
                     if response.status_code == 200:
-                        logger.info(f"Successfully removed item {product_id} from cart {cart_id}")
+                        logger.info(f"Successfully cleared items in cart {cart_id}")
                     else:
-                        logger.error(f"Failed to remove item from cart: {response.status_code}")
+                        logger.error(f"Failed to clear cart {cart_id}: {response.status_code}")
             elif action.startswith("restore_stock:"):
                 # Parse: restore_stock:product_id:store_id:quantity
                 parts = action.split(":")

@@ -4,8 +4,6 @@ from sqlalchemy.sql import func
 
 from enum import Enum
 
-
-
 Base = declarative_base()
 
 class OrderState(Enum):

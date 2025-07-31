@@ -17,9 +17,9 @@ from datetime import datetime
 class OrderCreateRequest(BaseModel):
     customer_id: int
     product_id: int
-    store_id: int  # New field for store
+    store_id: int 
     quantity: int
-    cart_id: int   # New field for cart
+    cart_id: int
 
 class SagaResponse(BaseModel):
     saga_id: int
@@ -83,11 +83,9 @@ def start_saga(order_request: OrderCreateRequest, db: Session = Depends(get_db))
     """
     Start a new order saga
     """
-    print("Here 1")
     try:
         logger.info(f"Starting saga for customer {order_request.customer_id}, product {order_request.product_id}")
 
-        print("Here 1")
         
         saga_service = SagaService(db)
         result = saga_service.start_order_saga(
@@ -104,10 +102,10 @@ def start_saga(order_request: OrderCreateRequest, db: Session = Depends(get_db))
             return SagaResponse(
                 saga_id=result['saga_id'],
                 order_id=result['order_id'],
+                status=result['status'],
                 current_state=result['current_state'],
-                saga_status=result['status'],
-                created_at=result.get('created_at'),
-                updated_at=result.get('updated_at')
+                message="Saga completed successfully",
+                created_at=result.get('created_at')
             )
         else:
             print("Here 4")
