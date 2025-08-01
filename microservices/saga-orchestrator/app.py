@@ -37,8 +37,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
  
 # Database setup
-DATABASE_URL_SAGA = os.getenv("DATABASE_URL_SAGA")
-engine = create_engine("postgresql+psycopg2://admin:admin@10.194.32.165:5437/postgres")
+# DATABASE_URL_SAGA = os.getenv("DATABASE_URL_SAGA")
+engine = create_engine("postgresql+psycopg2://admin:admin@db_saga:5432/postgres")
 session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 @asynccontextmanager

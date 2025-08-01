@@ -12,9 +12,8 @@ import requests
 import logging
 
 app = FastAPI(title="Warehouse Management Service")
-engine = create_engine("postgresql+psycopg2://admin:admin@10.194.32.165:5434/postgres")
+engine = create_engine("postgresql+psycopg2://admin:admin@db_warehouse:5432/postgres")
 Session = sessionmaker(bind=engine)
-
 
 class StoreSerializer(BaseModel):
     id: int

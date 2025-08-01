@@ -34,7 +34,7 @@ services:
     volumes:
       - ./microservices/products:/app
     environment:
-      - DATABASE_URL_PRODUCTS=postgresql://admin:admin@db_products:5433/postgres
+      - DATABASE_URL_PRODUCTS=postgresql://admin:admin@db_products:5432/postgres
     depends_on:
       - db_products
     expose:
@@ -113,7 +113,7 @@ services:
     volumes:
       - ./microservices/users:/app
     environment:
-      - DATABASE_URL_CUSTOMERS=postgresql://admin:admin@db_users:5435/postgres
+      - DATABASE_URL_CUSTOMERS=postgresql://admin:admin@db_users:5432/postgres
     depends_on:
       - db_users
     expose:
@@ -176,7 +176,7 @@ services:
     volumes:
       - ./microservices/saga-orchestrator:/app
     environment:
-      - DATABASE_URL_SAGA=postgresql://admin:admin@db_saga:5437/postgres
+      - DATABASE_URL_SAGA=postgresql://admin:admin@db_saga:5432/postgres
     depends_on:
       - db_saga
     expose:
@@ -236,7 +236,7 @@ services:
     pid: host
     restart: unless-stopped
     volumes:
-      - '/:/host:ro,rslave'
+      - '/:/host:ro'
     networks:
       - api_network
   grafana:
@@ -264,26 +264,6 @@ services:
     restart: unless-stopped
     networks:
       - api_network
-
-  redis:
-    image: redis:latest
-    container_name: redis
-    ports:
-      - "6379:6379"
-
-  # nginx: 
-  #   image: nginx:latest
-  #   ports:
-  #     - "8080:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf
-  #   networks:
-  #     - api_network
-  #   depends_on:
-  #     - microservices_warehouse-1
-  #     - microservices_warehouse-2
-  #   expose: 8080
 
 networks:
   api_network:

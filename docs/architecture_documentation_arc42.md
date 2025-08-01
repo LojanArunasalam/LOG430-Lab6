@@ -32,6 +32,9 @@ Voici une liste non-exhaustive d'exigences fonctionnelles et non fonctionnelles 
 - Le système doit être simple (ayant que deux couches), et facile à utiliser et déployer.
 ---------------------
 
+### Diagramme de cas d'utilisation
+![Diagramme de cas d'utilisation](images/usecase_diagram.png)
+
 Quality Goals 
 -------------
 
@@ -142,8 +145,7 @@ N/A
 
 Runtime View 
 ============
-### Diagramme de cas d'utilisation
-![Diagramme de cas d'utilisation](images/usecase_diagram.png)
+
 ### Diagramme de classe
 ![Diagramme de classe](images/class_diagram.png)
 
@@ -200,6 +202,9 @@ Voici la séparation des domains métiers:
 - Products Domain : Catalogue produits et informations associées
 - Ecommerce Domain : Panier d'achat avec items et processus de vente avec checkout
 - Warehouse Domain : Gestion des stocks, réapprovisionnement et logistique pour le stock central
+
+
+
 
 Design Decisions 
 ================
@@ -325,6 +330,90 @@ Utiliser FastAPI comme framework web pour tous les microservices (Users, Product
 - Dépendance à un framework relativement récent
 - Courbe d'apprentissage pour l'équipe (si non familière avec FastAPI)
 
+# 05 - Architectural decision record: Implémentation du pattern Saga pour la gestion des transactions distribuées
+
+## Status
+
+Accepté
+
+## Contexte
+
+Avec la transition vers une architecture microservices, la gestion des transactions distribuées devient complexe. Les opérations métiers comme la création d'une commande impliquent plusieurs services (Users, Products, Ecommerce, Warehouse) et doivent maintenir la cohérence des données même en cas d'échec partiel.
+
+Les options considérées incluent :
+- Transactions distribuées avec 2-Phase Commit (2PC)
+- Pattern Saga avec orchestration
+- Pattern Saga avec chorégraphie
+- Eventual consistency sans garanties transactionnelles
+
+## Décision
+
+Implémenter le pattern Saga avec orchestration centralisée via un service saga-orchestrator dédié.
+
+## Justification
+
+- **Cohérence des données** : Garantit que les opérations complexes s'exécutent complètement ou sont compensées
+- **Résilience** : En cas d'échec d'un service, les actions déjà effectuées peuvent être annulées (compensation)
+- **Visibilité** : L'orchestrateur centralise la logique métier et facilite le monitoring des transactions
+- **Flexibilité** : Permet d'ajouter facilement de nouveaux services dans le workflow
+- **Évite la complexité du 2PC** : Plus adapté aux microservices que les transactions distribuées traditionnelles
+
+## Conséquences
+
+**Positives :**
+- Garantie de cohérence éventuelle des données
+- Meilleure traçabilité des transactions distribuées
+- Possibilité de retry automatique en cas d'échec temporaire
+- Isolation des échecs par service
+
+**Négatives :**
+- Complexité accrue de l'architecture
+- Nécessité d'implémenter des actions de compensation pour chaque service
+- Point de défaillance unique (le saga orchestrator)
+- Latence supplémentaire due aux appels inter-services séquentiels
+
+# 06 - Architectural decision record: Choix de la machine à états pour la gestion du workflow Saga
+
+## Status
+
+Accepté
+
+## Contexte
+
+L'implémentation du pattern Saga nécessite une gestion rigoureuse des états et des transitions. Le workflow d'une commande passe par plusieurs étapes (validation stock, réservation, paiement) et doit pouvoir gérer les échecs et compensations à chaque étape.
+
+Les approches possibles incluent :
+- Machine à états simple avec if/else
+- Framework de workflow externe (Temporal, Zeebe)
+- Machine à états custom avec persistance en base
+- Event sourcing avec projection d'états
+
+## Décision
+
+Implémenter une machine à états custom avec persistance des états en base de données PostgreSQL.
+
+## Justification
+
+- **Simplicité** : Contrôle total sur la logique métier sans dépendance externe
+- **Persistance** : Les états sont sauvegardés, permettant la reprise après redémarrage
+- **Traçabilité** : Historique complet des transitions d'états pour audit
+- **Performance** : Pas de latence réseau vers des services externes
+- **Intégration** : S'intègre naturellement avec l'écosystème Python/PostgreSQL existant
+
+## Conséquences
+
+**Positives :**
+- Contrôle total sur la logique de workflow
+- Debugging facilité grâce à la persistance des états
+- Performance optimale (pas de dépendance réseau)
+- Coût réduit (pas de licence de workflow engine)
+
+**Négatives :**
+- Maintenance du code de machine à états à notre charge
+- Pas de fonctionnalités avancées des workflow engines (retry policies complexes, scheduling)
+- Risque de bugs dans l'implémentation custom
+- Effort de développement plus important qu'avec une solution existante
+
 Quality Requirements 
 ====================
 
@@ -373,6 +462,131 @@ Architecture microservices
 
 On peut voir que les résultats du test de charge sur l'architecture microservices révèlent une amélioration substantielle des performances par rapport à l'architecture monolithique précédente. Le graphes sur le dashboard Grafana montrent que les métriques restent relativement stables (latence et saturation), ce qui démontre une stabilité lors d'une charge élevée. Le graphique dans Locust permet aussi de voir que le taux de réussite a drastiquement augmenté, car la distribution des requêtes vers les bonnes services permettent une meilleure traitement de requêtes. 
 On peut alors conclure que cette transition est une amélioration. 
+
+Saga orchestrée 
+===============
+
+Avec l'évolution vers une architecture microservices, la gestion des transactions distribuées devient un défi majeur. Le pattern Saga orchestrée a été implémenté pour garantir la cohérence des données lors d'opérations complexes impliquant plusieurs services.
+
+Dans notre système e-commerce, une commande client nécessite la coordination de quatre microservices distincts : la vérification de stock, la validation du stock, le traitement du paiement et la confirmation de la commande. Chaque étape peut échouer, nécessitant une stratégie de compensation pour maintenir l'intégrité des données.
+
+L'orchestrateur saga centralise cette logique complexe en gérant une machine à états qui guide le workflow à travers les différentes phases. En cas d'échec à n'importe quelle étape, des actions de compensation sont automatiquement déclenchées pour annuler les opérations déjà effectuées, garantissant ainsi un retour à un état cohérent du système.
+
+Cette approche offre une traçabilité complète des transactions, facilite le debugging et permet une meilleure observabilité du système grâce à l'intégration avec Prometheus et Grafana.
+
+## Code du Saga implementée
+
+```python
+def _execute_saga_steps(self, saga_id: int, order_data: Dict[str, Any]) -> bool:
+        """Execute all saga steps in sequence"""
+
+        try:    
+            # Step 1: Verify stock availability
+            if not self._verify_stock(saga_id, order_data):
+                return False
+            
+            # Step 2: Reserve stock
+            if not self._reserve_stock(saga_id, order_data):
+                return False
+            
+            # Step 3: Process payment
+            if not self._initiate_checkout(saga_id, order_data):
+                return False
+            
+            # Step 4: Confirm order
+            if not self._confirm_order(saga_id, order_data):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error executing saga steps: {str(e)}")
+            self._start_compensation(saga_id, str(e))
+            return False
+```
+
+## Diagramme de la machine d'état
+
+
+![diagrammeMachineEtat](images/diagrammeMachineEtat.png)
+
+## Mécanismes de compensation
+
+Afin de corriger les erreurs dans chacunes des étapes, il faut implementer des mécanismes de failover.
+
+Voici le code pour l'exécution des compensation pour chaque étape
+``` python
+def _execute_compensation_action(self, saga_id: int, action: str):
+        """Execute a specific compensation action"""
+        logger.info(f"Executing compensation action '{action}' for saga {saga_id}")
+        
+        try:
+            if action.startswith("remove_item_from_cart:"):
+            # Parse: remove_item_from_cart:cart_id:product_id
+                parts = action.split(":")
+                if len(parts) == 3:
+                    cart_id, product_id = parts[1], parts[2]
+                    
+                    # Call ecommerce service to clear items from cart
+                    response = requests.delete(
+                        f"{self.services['ecommerce']}/api/v1/cart/{cart_id}/clear",
+                        timeout=self.timeout
+                    )
+                    
+                    if response.status_code == 200:
+                        logger.info(f"Successfully cleared items in cart {cart_id}")
+                    else:
+                        logger.error(f"Failed to clear cart {cart_id}: {response.status_code}")
+            elif action.startswith("restore_stock:"):
+                # Parse: restore_stock:product_id:store_id:quantity
+                parts = action.split(":")
+                if len(parts) == 4:
+                    product_id, store_id, quantity = parts[1], parts[2], parts[3]
+                    
+                    # Note: You would need to implement a restore stock endpoint
+                    # For now, we'll log it as we don't have this endpoint yet
+                    logger.info(f"Would restore stock: product={product_id}, store={store_id}, quantity={quantity}")
+                    
+            elif action.startswith("cancel_checkout:"):
+                # Parse: cancel_checkout:checkout_id
+                checkout_id = action.split(":")[1]
+                
+                response = requests.put(
+                    f"{self.services['ecommerce']}/api/v1/checkout/{checkout_id}/cancel",
+                    timeout=self.timeout
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"Successfully cancelled checkout {checkout_id}")
+                else:
+                    logger.error(f"Failed to cancel checkout {checkout_id}: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"Error executing compensation action '{action}': {str(e)}")
+```
+
+
+Voici une simulation d'échéc contrôlé pour le traitement de payment (dans le cas où le cart n'existe pas):
+![compensation](images/compensationActionProcessPayment.png)
+
+## Dashboards Grafana
+
+Voici le dashboard Grafana lorsque le saga a réussi et les logs (avec une instance dans la base de données): 
+
+![grafanaSagaSuccessful](images/grafanaSagaSuccesful.png)
+
+![terminalSagaSuccessul](images/terminalSagaSuccessful.png)
+
+![databaseSagaStepsSuccessful](images/databaseSagaStepsSuccessful.png)
+
+
+Voici le dashboard Grafana lorsque le saga a échoué et les logs (avec une instance dans la base de données):
+
+![grafanaSagaFailed](images/grafanaSagaFailed.png)
+
+![terminalSagaFailed](images/terminalSagaFail.png)
+
+![databaseSagaStepsFailed](images/databaseSagaStepsFailed.png)
 
 Glossary 
 ========

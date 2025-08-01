@@ -145,11 +145,6 @@ class SagaService:
     def _execute_saga_steps(self, saga_id: int, order_data: Dict[str, Any]) -> bool:
         """Execute all saga steps in sequence"""
 
-        # try:
-        #     result = SagaAssembler.saga().operation((self._verify_stock, 'sold_out'),(self._verify_stock, 'in_stock')).operation((self._reserve_stock, 'reserved')).choreography_execute()
-        # except SagaAssembler.SagaException as exception:
-        #     return str(exception.operation_error)
-
         try:    
             # Step 1: Verify stock availability
             if not self._verify_stock(saga_id, order_data):
